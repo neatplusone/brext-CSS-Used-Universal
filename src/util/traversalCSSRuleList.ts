@@ -3,13 +3,15 @@ import type { cssObj } from './cssHelper'
 import convUrlToAbs from './convUrlToAbs'
 import convLinkToText from './convLinkToText'
 import convTextToRules from './convTextToRules'
+import type { RunContext } from './runContext'
 
 type cssNodeObj = Awaited<ReturnType<typeof convTextToRules>>
 
 function traversalCSSRuleList(
   doc: Document,
   externalCssCache: { [index: cssNodeObj['href']]: cssNodeObj },
-  cssNodeObj: cssNodeObj
+  cssNodeObj: cssNodeObj,
+  ctx: RunContext
 ): Promise<cssObj> {
   var promises = []
 
@@ -67,7 +69,7 @@ function traversalCSSRuleList(
               // CSSMediaRule
               traversalCSSRuleList(doc, externalCssCache, {
                 nodes: CSSRuleListItem.nodes,
-              }).then(function (obj) {
+              }, ctx).then(function (obj) {
                 _objCss.normRule.push(
                   '\n@media ' + CSSRuleListItem.params + '{'
                 )
@@ -107,23 +109,33 @@ function traversalCSSRuleList(
                 href !== cssNodeObj.parentHref
               ) {
                 new Promise((resolve) => {
-                  if (externalCssCache[href] !== undefined) {
+                  // an import that failed last time gets another try
+                  if (
+                    externalCssCache[href] !== undefined &&
+                    !externalCssCache[href].failed
+                  ) {
                     resolve(externalCssCache[href])
                   } else {
-                    convLinkToText([href])
+                    let failed = false
+                    convLinkToText([href], ctx)
                       .then(function (result) {
+                        failed = result[0].failed
                         return convTextToRules(result[0].cssraw)
                       })
                       .then(function (nodeArr) {
+                        nodeArr.failed = failed
                         nodeArr.href = href
                         nodeArr.parentHref = cssNodeObj.href
-                        externalCssCache[href] = nodeArr
+                        // a superseded run must not overwrite what a newer one cached
+                        if (ctx.isCurrent()) {
+                          externalCssCache[href] = nodeArr
+                        }
                         resolve(nodeArr)
                       })
                   }
                 })
                   .then(function (nodeArr: cssNodeObj) {
-                    return traversalCSSRuleList(doc, externalCssCache, nodeArr)
+                    return traversalCSSRuleList(doc, externalCssCache, nodeArr, ctx)
                   })
                   .then(function (obj) {
                     if (obj.normRule.length > 0) {

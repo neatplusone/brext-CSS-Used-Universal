@@ -15,8 +15,9 @@ const getByFetch = (url: string): Promise<string> => {
   })
 }
 
+// answered by devtools.js, or by background.js where devtools has no getResources
 const getByChromeAPI = (url: string): Promise<string> => {
-  return new Promise((resolve, _reject) => {
+  return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       {
         action: 'getResourceContent',
@@ -24,7 +25,22 @@ const getByChromeAPI = (url: string): Promise<string> => {
       },
       (response) => {
         // console.log('response',response);
-        resolve(response.content)
+        if (
+          !response ||
+          response.ok === false ||
+          typeof response.content !== 'string'
+        ) {
+          reject(
+            new Error(
+              (response && response.reason) ||
+                (chrome.runtime.lastError &&
+                  chrome.runtime.lastError.message) ||
+                'no content'
+            )
+          )
+        } else {
+          resolve(response.content)
+        }
       }
     )
   })

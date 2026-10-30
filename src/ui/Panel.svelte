@@ -11,6 +11,16 @@
   let popVisible = false
   let tipsVisible = false
   let popText = ''
+  let unreadable: string[] = []
+  // only the devtools page sets this, through storage. Messages can't.
+  let generation: number | null = null
+  let dispatchTimer: ReturnType<typeof setTimeout>
+  // a fast run can answer before storage tells this panel about its generation
+  let earlyMessages = []
+  const tabId = chrome.devtools.inspectedWindow.tabId
+  const generationKey = 'generation:' + tabId
+  // the panel can't ask for the tab in Firefox, background.js can
+  const canUseTabs = !!chrome.tabs
   let dataForCodepen = {
     title: 'New Pen!',
     html: '<div>Hello, World!</div>',
@@ -19,9 +29,18 @@
 
   function checkAllowedFileSchemeAccess(): Promise<boolean> {
     return new Promise((res) => {
-      chrome.extension.isAllowedFileSchemeAccess((allow: boolean) => {
-        res(allow)
-      })
+      if (canUseTabs) {
+        chrome.extension.isAllowedFileSchemeAccess((allow: boolean) => {
+          res(allow)
+        })
+      } else {
+        chrome.runtime.sendMessage(
+          { action: 'getPageInfo', tabId },
+          (info: { fileAccess?: boolean }) => {
+            res(!!(info && info.fileAccess))
+          }
+        )
+      }
     })
   }
 
@@ -32,7 +51,7 @@
     const inspectedTabUrl = await getInspectedTabUrl()
     if (
       inspectedTabUrl.match(
-        /^(chrome|https:\/\/chrome\.google\.com\/webstore)/
+        /^(chrome|about:|moz-extension:|https:\/\/chrome\.google\.com\/webstore|https:\/\/addons\.mozilla\.org)/
       ) !== null
     ) {
       isGooglePreservedPages = true
@@ -49,12 +68,22 @@
 
   function getInspectedTabUrl(): Promise<string> {
     return new Promise((res) => {
+      if (!canUseTabs) {
+        chrome.runtime.sendMessage(
+          { action: 'getPageInfo', tabId },
+          (info: { url?: string }) => {
+            res((info && info.url) || '')
+          }
+        )
+        return
+      }
       chrome.tabs.query({}, function (results) {
         results.forEach(function (ele) {
           if (ele.id === chrome.devtools.inspectedWindow.tabId) {
             res(ele.url)
           }
         })
+        res('')
       })
     })
   }
@@ -104,7 +133,7 @@
   // }
 
   function gotoGithubFAQ() {
-    window.open('https://github.com/painty/CSS-Used-ChromeExt#faq')
+    window.open('https://github.com/neatplusone/brext-CSS-Used-Universal#faq')
   }
 
   let className = ''
@@ -113,25 +142,82 @@
     className = ' theme-' + chrome.devtools.panels.themeName
   }
 
+  function isCurrentRun(message: { generation?: number }) {
+    return (
+      debugMode || (generation !== null && message.generation === generation)
+    )
+  }
+
+  function showUnavailable(expected = generation) {
+    updateAccessToURL().then(() => {
+      if (expected !== generation) {
+        return
+      }
+      popVisible = true
+      if (isGooglePreservedPages) {
+        popText = 'Extensions are not allowed to run on this browser page.'
+      } else if (isFileProtocol) {
+        tipsVisible = true
+      } else {
+        popText = "Can't work on this page."
+      }
+    })
+  }
+
+  function handleRunMessage(message) {
+    clearTimeout(dispatchTimer)
+    if (message.action === 'inform') {
+      popVisible = true
+      popText = message.info
+    } else if (message.action === 'celebrate') {
+      popVisible = false
+      unreadable = message.unreadable || []
+      strHtml = message.html
+      strCss = message.css
+      dataForCodepen.html = strHtml
+      dataForCodepen.css = strCss
+    }
+  }
+
+  chrome.storage.local.get(generationKey, (items) => {
+    if (generation === null && items[generationKey] !== undefined) {
+      generation = items[generationKey]
+      const replay = earlyMessages.filter((m) => isCurrentRun(m))
+      earlyMessages = earlyMessages.filter((m) => m.generation > generation)
+      replay.forEach(handleRunMessage)
+    }
+  })
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes[generationKey] && changes[generationKey].newValue) {
+      generation = changes[generationKey].newValue
+      const replay = earlyMessages.filter((m) => isCurrentRun(m))
+      earlyMessages = earlyMessages.filter((m) => m.generation > generation)
+      replay.forEach(handleRunMessage)
+    }
+  })
+  chrome.storage.local.set({ ['panelLoaded:' + tabId]: Date.now() })
+
   chrome.runtime.onMessage.addListener((message, sender) => {
     // console.log('sender,message from panel', sender, message)
     // console.log('sender.tab',sender.tab);
     tipsVisible = false
     // Messages from content scripts should have sender.tab set
-    if (sender.tab && sender.tab.id === chrome.devtools.inspectedWindow.tabId) {
-      if (message.action === 'inform') {
-        popVisible = true
-        popText = message.info
-      } else if (message.action === 'celebrate') {
-        popVisible = false
-        strHtml = message.html
-        strCss = message.css
-        dataForCodepen.html = strHtml
-        dataForCodepen.css = strCss
+    // or be relayed by background.js
+    if (
+      (sender.tab && sender.tab.id === tabId) ||
+      (message.relayed && message.tabId === tabId)
+    ) {
+      if (isCurrentRun(message)) {
+        handleRunMessage(message)
+      } else if (
+        message.action !== 'evalGetCssUsed' &&
+        (generation === null || message.generation > generation)
+      ) {
+        earlyMessages.push(message)
       }
     } else {
       // Messages from devtools.js
-      if (message.tabId === chrome.devtools.inspectedWindow.tabId) {
+      if (message.tabId === tabId) {
         if (message.action === 'inform') {
           if (
             message.info === 'onShown' ||
@@ -143,17 +229,21 @@
             popVisible = true
             popText = 'onNavigated'
           } else if (message.info === 'frameURLsEmpty') {
-            updateAccessToURL().then(() => {
-              popVisible = true
-              if (isGooglePreservedPages) {
-                popText =
-                  'Extensions are not allowed to run on Chrome preserved pages.'
-              } else if (isFileProtocol) {
-                tipsVisible = true
-              } else {
-                popText = "Can't work on this page."
+            clearTimeout(dispatchTimer)
+            showUnavailable()
+          } else if (message.info === 'selectionUnreachable') {
+            clearTimeout(dispatchTimer)
+            popVisible = true
+            popText =
+              "Can't reach this element. In Firefox, extensions can't read a selection inside a cross-origin iframe. Open the iframe's URL in its own tab instead."
+          } else if (message.info === 'runDispatched') {
+            // no answer means no content script here, such as on a restricted page
+            clearTimeout(dispatchTimer)
+            dispatchTimer = setTimeout(() => {
+              if (isCurrentRun(message)) {
+                showUnavailable()
               }
-            })
+            }, 1500)
           }
         }
       }
@@ -181,6 +271,14 @@
     <span>CSS Used by $0 and its descendants:</span>
     <button class="plain" on:click={gotoGithubFAQ}>FAQ</button>
   </div>
+  {#if unreadable.length > 0}
+    <div class="notice">
+      This result may be incomplete, these stylesheets couldn't be read:
+      {#each unreadable as url}
+        <div class="notice-url">{url}</div>
+      {/each}
+    </div>
+  {/if}
   <div class="output">
     <textarea
       disabled={strCss === ''}
@@ -211,12 +309,16 @@
       {#if tipsVisible}
         <div class="tips">
           <p>Extensions can't work on file:/// pages by default.</p>
-          <p>
-            You can <button on:click={openCSSUsedSettings} class="plain"
-              >turn on</button
-            > the "Allow access to file URLs"
-          </p>
-          <p>And restart chrome if necessary.</p>
+          {#if canUseTabs}
+            <p>
+              You can <button on:click={openCSSUsedSettings} class="plain"
+                >turn on</button
+              > the "Allow access to file URLs"
+            </p>
+            <p>And restart chrome if necessary.</p>
+          {:else}
+            <p>You can allow access to local files for CSS Used in about:addons.</p>
+          {/if}
         </div>
       {:else}
         <div class="info">
@@ -273,6 +375,14 @@
     cursor: pointer;
     padding: 0.3em 0.6em;
     border-radius: 4px;
+  }
+  .notice {
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #b45309;
+  }
+  .notice-url {
+    word-break: break-all;
   }
   .output {
     flex: 1;

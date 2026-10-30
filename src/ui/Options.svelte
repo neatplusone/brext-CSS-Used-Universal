@@ -1,57 +1,6 @@
 <script lang="ts">
   let convUrlToAbsolute = true
   let buttonText = 'Save'
-  function requestPermission() {
-    // Permissions must be requested from inside a user gesture, convUrlToAbs a button's
-    // click handler.
-    chrome.permissions.request(
-      {
-        permissions: ['storage'],
-      },
-      function (granted) {
-        // The callback argument will be true if the user granted the permissions.
-        // console.log('granted',granted);
-        if (granted) {
-          save_options()
-        } else {
-        }
-      }
-    )
-  }
-
-  // function removePermission() {
-  //   chrome.permissions.remove(
-  //     {
-  //       permissions: ['storage'],
-  //     },
-  //     function (removed) {
-  //       // console.log('removed',removed);
-  //       if (removed) {
-  //         // The permissions have been removed.
-  //       } else {
-  //         // The permissions have not been removed (e.g., you tried to remove
-  //         // required permissions).
-  //       }
-  //     }
-  //   )
-  // }
-
-  function checkPermission() {
-    chrome.permissions.contains(
-      {
-        permissions: ['storage'],
-      },
-      function (result) {
-        if (result) {
-          // The extension has the permissions.
-          restore_options()
-        } else {
-          // The extension doesn't have the permissions.
-        }
-      }
-    )
-  }
-
   // Saves options to chrome.storage
   function save_options() {
     chrome.storage.sync.set(
@@ -81,18 +30,12 @@
       }
     )
   }
-  checkPermission()
+  restore_options()
 </script>
 
 <main>
   <h1>
-    <a
-      href="https://chrome.google.com/webstore/detail/css-used/cdopjfddjlonogibjahpnmjpoangjfff"
-      target="_blank"
-      rel="noreferrer"
-    >
-      <img src="/static/icon/128.png" class="logo" alt="CSS Used Logo" />
-    </a>
+    <img src="/static/icon/128.png" class="logo" alt="CSS Used Logo" />
     CSS Used Options
   </h1>
 
@@ -117,14 +60,14 @@
   </div>
 
   <div class="card">
-    <button on:click={requestPermission}>{buttonText}</button>
+    <button on:click={save_options}>{buttonText}</button>
   </div>
 
   <div class="separator" />
 
   <p>
     Source code on <a
-      href="https://github.com/painty/CSS-Used-ChromeExt"
+      href="https://github.com/neatplusone/brext-CSS-Used-Universal"
       target="_blank"
       rel="noreferrer">GitHub</a
     >

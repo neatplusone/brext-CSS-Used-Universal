@@ -1,3 +1,8 @@
+**ver 3.1.0 | 30/10/2026**
+1. One codebase and one build for Chrome and Firefox.
+1. A superseded run can no longer overwrite the result of a newer selection.
+1. Stylesheets that can't be read are named in the panel, and retried on the next run.
+
 **ver 3.0.1 | 23/09/2026**
 1. Fix resource loading in recent Chrome versions by preventing an async message listener from intercepting responses. #63
 

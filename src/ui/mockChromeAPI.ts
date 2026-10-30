@@ -13,6 +13,15 @@ if (debugMode) {
         tabId: 123,
       },
     },
+    storage: {
+      local: {
+        get: (_key, fn) => fn.call(null, {}),
+        set: (_items, fn) => fn && fn.call(null),
+      },
+      onChanged: {
+        addListener: () => {},
+      },
+    },
     extension:{
       isAllowedFileSchemeAccess:(fn)=>{
         fn.call(null,true)

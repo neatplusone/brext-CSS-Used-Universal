@@ -1,5 +1,35 @@
-let panelVisible = false
+const inspectedTabId = chrome.devtools.inspectedWindow.tabId
+// Firefox has no getResources, nor the frameURL and useContentScriptContext eval options.
+const hasResourcesApi =
+  typeof chrome.devtools.inspectedWindow.getResources === 'function'
+
+// In Firefox onShown only fires when switching between sidebar panes
+let panelVisible = !hasResourcesApi
 let isPageLoaded = true
+// seeded by time to keep increasing when this page reloads
+let generation = Date.now()
+
+function informPanel(info, extra = {}) {
+  chrome.runtime
+    .sendMessage({
+      action: 'inform',
+      info,
+      tabId: inspectedTabId, // to specify message from
+      ...extra,
+    })
+    .catch(console.log)
+}
+
+// stored before anything else happens, the panel takes the current generation from here
+function nextGeneration() {
+  generation += 1
+  const current = generation
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ ['generation:' + inspectedTabId]: current }, () => {
+      resolve(current)
+    })
+  })
+}
 
 function getAllFramesUrl() {
   const framesURLArray = []
@@ -18,22 +48,19 @@ function getAllFramesUrl() {
   })
 }
 
-function evalGetCssUsed(cancel = false) {
-  if ((!cancel && !panelVisible) || !isPageLoaded) {
-    return
-  }
+function evalInAllFrames(cancel, current) {
   getAllFramesUrl().then((arrFrameURL) => {
+    // a late cancel must not stop the newer run
+    if (current !== generation) {
+      return
+    }
     // console.log('arrFrameURL', arrFrameURL)
     if (arrFrameURL.length === 0) {
-      chrome.runtime.sendMessage({
-        action: 'inform',
-        info: 'frameURLsEmpty',
-        tabId: chrome.devtools.inspectedWindow.tabId, // to specify message from
-      })
+      informPanel('frameURLsEmpty')
     }
     arrFrameURL.forEach(function (ele) {
       chrome.devtools.inspectedWindow.eval(
-        'getCssUsed(' + (cancel ? '' : '$0') + ')',
+        'getCssUsed(' + (cancel ? 'undefined' : '$0') + ',' + current + ')',
         {
           frameURL: ele,
           useContentScriptContext: true,
@@ -50,24 +77,66 @@ function evalGetCssUsed(cancel = false) {
   })
 }
 
+function dispatchSelection(cancel, current) {
+  chrome.runtime.sendMessage(
+    { action: 'cancelRun', tabId: inspectedTabId, generation: current },
+    () => {
+      if (cancel || current !== generation) {
+        return
+      }
+      // before the dispatch, as the content script can answer the panel right after it
+      informPanel('runDispatched', { generation: current })
+      chrome.devtools.inspectedWindow.eval(
+        `(() => {
+          const el = $0
+          if (!el) return 'none'
+          el.dispatchEvent(new CustomEvent('css-used:select', {
+            bubbles: false, composed: true, detail: ${current},
+          }))
+          return 'dispatched'
+        })()`,
+        (result, exception) => {
+          if (current !== generation) {
+            return
+          }
+          if (exception) {
+            informPanel('frameURLsEmpty')
+          } else if (result === 'none') {
+            // $0 is empty when the selection is inside a cross-origin frame
+            informPanel('selectionUnreachable', { generation: current })
+          }
+        }
+      )
+    }
+  )
+}
+
+async function evalGetCssUsed(cancel = false) {
+  if ((!cancel && !panelVisible) || (hasResourcesApi && !isPageLoaded)) {
+    return
+  }
+  const current = await nextGeneration()
+  if (current !== generation) {
+    return
+  }
+  if (hasResourcesApi) {
+    evalInAllFrames(cancel, current)
+  } else {
+    dispatchSelection(cancel, current)
+  }
+}
+
 chrome.devtools.panels.elements.onSelectionChanged.addListener(function () {
   evalGetCssUsed()
   // console.log('onSelectionChanged')
-  chrome.runtime.sendMessage({
-    action: 'inform',
-    info: 'onSelectionChanged',
-    tabId: chrome.devtools.inspectedWindow.tabId,
-  }).catch(console.log)
+  informPanel('onSelectionChanged')
 })
 
 chrome.devtools.network.onNavigated.addListener(function () {
   // console.log('onNavigated')
   isPageLoaded = false
-  chrome.runtime.sendMessage({
-    action: 'inform',
-    info: 'onNavigated',
-    tabId: chrome.devtools.inspectedWindow.tabId,
-  })
+  nextGeneration()
+  informPanel('onNavigated')
   // initialText = `on Navigated.<li>Select another dom on the left </li>or<li>Reopen the Devtool</li>`
 })
 
@@ -80,34 +149,42 @@ chrome.devtools.panels.elements.createSidebarPane(
       // console.log('onShown')
       panelVisible = true
       evalGetCssUsed()
-      chrome.runtime.sendMessage({
-        action: 'inform',
-        info: 'onShown',
-        tabId: chrome.devtools.inspectedWindow.tabId,
-      })
+      informPanel('onShown')
     })
     sidebar.onHidden.addListener(function () {
       // console.log('onHidden')
       evalGetCssUsed(true)
       panelVisible = false
-      chrome.runtime.sendMessage({
-        action: 'inform',
-        info: 'onHidden',
-        tabId: chrome.devtools.inspectedWindow.tabId,
-      })
+      informPanel('onHidden')
     })
   }
 )
 
+if (!hasResourcesApi) {
+  // a result produced before the panel was loaded would be lost
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes['panelLoaded:' + inspectedTabId]) {
+      evalGetCssUsed()
+    }
+  })
+}
+
 // passing resources to content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // console.log('sender,message', sender, message)
-  // Messages from content scripts should have sender.tab set
-  if (sender.tab && sender.tab.id === chrome.devtools.inspectedWindow.tabId) {
-    if (message.action == 'getResourceContent') {
+  // Messages from content scripts should have sender.tab set, or be relayed by background.js
+  if (
+    (sender.tab && sender.tab.id === inspectedTabId) ||
+    (message.relayed && message.tabId === inspectedTabId)
+  ) {
+    if (message.action == 'getResourceContent' && hasResourcesApi) {
       chrome.devtools.inspectedWindow.getResources((resources) => {
         // console.log('resources', resources);
         const resourceMatched = resources.find((r) => r.url === message.url)
+        if (!resourceMatched) {
+          sendResponse({ ok: false, url: message.url, reason: 'not a page resource' })
+          return
+        }
         resourceMatched.getContent((content, encoding) => {
           // https://developer.chrome.com/docs/extensions/reference/devtools_inspectedWindow/#method-getResources
           // encoding:Currently, only base64 is supported.

@@ -5,6 +5,8 @@
 
 import debugMode from '../const/debugMode'
 import { cssHelper } from './cssHelper'
+import { inform } from './runContext'
+import type { RunContext } from './runContext'
 
 // may match accoding to interaction
 const PseudoClass =
@@ -29,7 +31,7 @@ const PseudoClass =
     'ig'
   )
 
-function filterRules($0: HTMLElement, objCss, taskTimerRecord) {
+function filterRules($0: HTMLElement, objCss, taskTimerRecord, ctx: RunContext) {
   var promises = []
   var matched = []
   var keyFramUsed = []
@@ -45,10 +47,10 @@ function filterRules($0: HTMLElement, objCss, taskTimerRecord) {
           var timer = setTimeout(function () {
             if (idx % 1000 === 0) {
               let nRule = objCss.normRule.length
-              chrome.runtime.sendMessage({
-                action: 'inform',
-                info: `The selected dom has ${descendantsCount} descendants.\nPage rules are about ${nRule}.\nTraversing the ${idx}th rule...`,
-              })
+              inform(
+                ctx,
+                `The selected dom has ${descendantsCount} descendants.\nPage rules are about ${nRule}.\nTraversing the ${idx}th rule...`
+              )
             }
 
             if (typeof rule === 'string') {

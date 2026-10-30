@@ -13,6 +13,7 @@ async function convTextToRules(styleContent: string, href?: string) {
     href?: string
     parentHref?: string
     media?: MediaList
+    failed?: boolean
   }
   const returnObj: cssNodeObj = {
     nodes: result.root.nodes,

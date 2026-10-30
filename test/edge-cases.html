@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>CSS Used edge cases</title>
+    <link rel="stylesheet" href="./css/index.css" />
+    <link rel="stylesheet" href="./missing.css" />
+    <link rel="stylesheet" href="/fixture/login.css" />
+    <link rel="stylesheet" href="/fixture/slow.css" />
+    <style>
+      @import url('./also-missing.css');
+      .inline { color: rgb(4, 5, 6); }
+    </style>
+  </head>
+  <body>
+    <p class="slow-sheet">element A</p>
+    <p class="inline">element B</p>
+  </body>
+</html>

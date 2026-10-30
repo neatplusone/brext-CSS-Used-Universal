@@ -2,12 +2,14 @@ import traversalCSSRuleList from './traversalCSSRuleList'
 import convTextToRules from './convTextToRules'
 import { cssHelper } from './cssHelper'
 import convUrlToAbs from './convUrlToAbs'
+import type { RunContext } from './runContext'
 
 type cssNodeObj = Awaited<ReturnType<typeof convTextToRules>>
 
 function generateRulesAll(
   doc: Document,
-  externalCssCache: { [index: cssNodeObj['href']]: cssNodeObj }
+  externalCssCache: { [index: cssNodeObj['href']]: cssNodeObj },
+  ctx: RunContext
 ) {
   var x: number
 
@@ -29,8 +31,14 @@ function generateRulesAll(
           if (styleSheet.href !== null) {
             // can be link tag
             cssNodeArr = externalCssCache[styleSheet.href]
+            if (cssNodeArr === undefined) {
+              // such as added by the page while this run was fetching
+              ctx.unreadable.add(styleSheet.href)
+              res({})
+              return
+            }
             cssNodeArr.media = doc.styleSheets[x].media
-            traversalCSSRuleList(doc, externalCssCache, cssNodeArr).then(res)
+            traversalCSSRuleList(doc, externalCssCache, cssNodeArr, ctx).then(res)
           } else if (styleSheet.ownerNode instanceof Element) {
             // style tag
             let html: string = styleSheet.ownerNode.innerHTML
@@ -59,7 +67,7 @@ function generateRulesAll(
             let _x = x
             convTextToRules(html, doc.location.href).then((cssNodeObj) => {
               cssNodeObj.media = doc.styleSheets[_x].media
-              traversalCSSRuleList(doc, externalCssCache, cssNodeObj).then(res)
+              traversalCSSRuleList(doc, externalCssCache, cssNodeObj, ctx).then(res)
             })
           } else {
             // console.log('ProcessingInstruction', styleSheet.ownerNode);
