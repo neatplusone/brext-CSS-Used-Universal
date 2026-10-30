@@ -1,3 +1,7 @@
+**ver 3.1.1 | 30/10/2026**
+1. Preview no longer uses document.write.
+1. Per-browser build and package scripts.
+
 **ver 3.1.0 | 30/10/2026**
 1. One codebase and one build for Chrome and Firefox.
 1. A superseded run can no longer overwrite the result of a newer selection.

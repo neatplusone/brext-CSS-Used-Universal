@@ -6,7 +6,10 @@ One codebase for Chrome and Firefox. A fork of [painty/CSS-Used-ChromeExt](https
 
 Get all css rules used by the selected DOM and its descendants.
 
-The original is on the Chrome Web Store : [CSS Used >>](https://chrome.google.com/webstore/detail/css-used/cdopjfddjlonogibjahpnmjpoangjfff)
+## Install
+
+- **Firefox:** [CSS Used on Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/css-used-firefox/)
+- **Chrome:** use the [original CSS Used](https://chrome.google.com/webstore/detail/css-used/cdopjfddjlonogibjahpnmjpoangjfff) by its original developer. This fork isn't published on the Chrome Web Store and its Chrome build isn't maintained as a release, but you can build it and load it unpacked.
 
 ## Build and load
 
