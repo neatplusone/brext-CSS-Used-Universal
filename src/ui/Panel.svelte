@@ -93,21 +93,31 @@
     const html = strHtml.replace(regNoProtocol, strAddProtocol)
     const css = strCss.replace(regNoProtocol, strAddProtocol)
 
-    const w = window.open()
-    // setTimeout(function () {
-    w.document.write('<!DOCTYPE html>' + html)
+    const previewDoc = new DOMParser().parseFromString(
+      '<!DOCTYPE html>' + html,
+      'text/html'
+    )
     // the local preview will have two injected style
     // which contains body fontsize 75%
     // making body fontsize 75%*75%
     // That's not correct.
-    const styleDefault = w.document.createElement('style')
-    styleDefault.appendChild(w.document.createTextNode(`body{font-size:100%;}`))
-    w.document.head.appendChild(styleDefault)
-    // insert the picked css rules
-    const styleInsert = w.document.createElement('style')
-    styleInsert.appendChild(w.document.createTextNode(css))
-    w.document.head.appendChild(styleInsert)
-    // }, 200)
+    const styleDefault = previewDoc.createElement('style')
+    styleDefault.appendChild(previewDoc.createTextNode(`body{font-size:100%;}`))
+    previewDoc.head.appendChild(styleDefault)
+    // insert the picked css rules, which must not close the style tag when serialized
+    const styleInsert = previewDoc.createElement('style')
+    styleInsert.appendChild(
+      previewDoc.createTextNode(css.replace(/<\/style/gi, '<\\/style'))
+    )
+    previewDoc.head.appendChild(styleInsert)
+
+    const url = URL.createObjectURL(
+      new Blob(['<!DOCTYPE html>' + previewDoc.documentElement.outerHTML], {
+        type: 'text/html',
+      })
+    )
+    window.open(url)
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
 
   let textareaCss: HTMLTextAreaElement

@@ -10,10 +10,19 @@ The original is on the Chrome Web Store : [CSS Used >>](https://chrome.google.co
 
 ## Build and load
 
-`npm ci && npm run build` produces one `dist/` folder for both browsers. Chrome 121+ and Firefox 140+ are supported.
+Chrome 121+ and Firefox 140+ are supported. After `npm ci`:
 
-- Firefox: `about:debugging` > This Firefox > Load Temporary Add-on > `dist/manifest.json`
-- Chrome: `chrome://extensions` > Load unpacked > `dist/`
+| Command | Output |
+|---|---|
+| `npm run build` | `dist/`, which loads in both browsers, plus `dist-firefox/` and `dist-chrome/` |
+| `npm run build:firefox`, `npm run build:chrome` | `dist/` and that browser's folder |
+| `npm run package` | The above for both browsers, plus zips in `web-ext-artifacts/` |
+| `npm run package:firefox`, `npm run package:chrome` | One browser's folder and zip |
+
+The per-browser folders only differ in their manifest: keys read only by the other browser are removed, which avoids Chrome's `'background.scripts' requires manifest version of 2 or lower` warning.
+
+- Firefox: `about:debugging` > This Firefox > Load Temporary Add-on > `dist-firefox/manifest.json`
+- Chrome: `chrome://extensions` > Load unpacked > `dist-chrome/`
 
 ## Firefox limitations
 

@@ -8,9 +8,14 @@
     "dev:ui": "vite --config vite.config.ui.js",
     "build:content": "tsc && vite build --minify --config vite.config.content.js",
     "build:ui": "vite build --minify --config vite.config.ui.js",
-    "build": "npm run build:ui && npm run build:content",
-    "lint:firefox": "web-ext lint -s dist",
-    "package": "web-ext build -s dist"
+    "build:dist": "npm run build:ui && npm run build:content",
+    "build": "node build.js",
+    "build:firefox": "node build.js firefox",
+    "build:chrome": "node build.js chrome",
+    "package:firefox": "node build.js firefox --package",
+    "package:chrome": "node build.js chrome --package",
+    "package": "node build.js --package",
+    "lint:firefox": "npm run build:firefox && web-ext lint -s dist-firefox"
   },
   "repository": {
     "type": "git",
